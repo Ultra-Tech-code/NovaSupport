@@ -17,6 +17,7 @@ The initial contract is intentionally small:
 The contract now includes comprehensive error codes for better debugging and user experience. See [ERROR_CODES.md](ERROR_CODES.md) for detailed documentation of all error codes and their meanings.
 
 Key error categories:
+
 - **Input validation errors** (1-99): Invalid amounts, messages, asset codes
 - **Authorization errors** (100-199): Admin access, recipient permissions
 - **Contract state errors** (200-299): Initialization, pause state
@@ -35,11 +36,11 @@ The MVP only needs to show clear Soroban intent for the Stellar Wave submission.
 
 ## Deployed Contract (Testnet)
 
-| Field | Value |
-|---|---|
-| Contract ID | `NEXT_PUBLIC_CONTRACT_ID` (set in `frontend/.env.local`) |
-| Network | Stellar Testnet |
-| Explorer | https://stellar.expert/explorer/testnet/contract/&lt;id&gt; |
+| Field       | Value                                                       |
+| ----------- | ----------------------------------------------------------- |
+| Contract ID | `NEXT_PUBLIC_CONTRACT_ID` (set in `frontend/.env.local`)    |
+| Network     | Stellar Testnet                                             |
+| Explorer    | https://stellar.expert/explorer/testnet/contract/&lt;id&gt; |
 
 The contract ID is recorded in `frontend/.env.example` as `NEXT_PUBLIC_CONTRACT_ID`. After deploying, set the actual ID in `frontend/.env.local` (not committed) and update this table with the deployed contract ID and deployer address.
 
@@ -193,6 +194,7 @@ const preparedTx = await server.prepareTransaction(tx);
 Follow these steps to build the WASM and deploy the contract to Stellar Testnet.
 
 **Prerequisites:**
+
 - Rust stable toolchain with `wasm32-unknown-unknown` target.
 - Stellar CLI installed (`cargo install --locked stellar-cli`).
 - A funded Testnet account (e.g., `mykey`).
@@ -216,6 +218,7 @@ After a successful deploy, the CLI will print the **Contract ID**. Update your f
 **The NovaSupport contract is immutable once deployed.** There is no built-in "upgrade" function or admin key that can swap the WASM code for an existing Contract ID.
 
 To "upgrade" the contract:
+
 1. **Deploy a new instance:** Re-run the deployment steps with your updated WASM. This will generate a **new Contract ID**.
 2. **Update the Frontend:** Point your frontend application to the new Contract ID.
 3. **State Migration:** If the old contract has critical state (like `support_count`) that must be preserved, you must:
@@ -236,7 +239,58 @@ Soroban contracts are immutable once deployed, so rollback means moving traffic 
 
 If the bad contract already received support events, preserve the old ID for auditability even after cutting over.
 
-Notes
+### Rollback Checklist
 
-- If you prefer a browser-based alternative for funding testnet accounts, see: https://laboratory.stellar.org
+Before rolling back to a previous contract version:
+
+- [ ] Identify the last known-good contract ID and source commit
+- [ ] Verify the WASM hash matches the source code
+- [ ] Deploy the new contract instance to testnet first
+- [ ] Test critical functions (initialize, support, withdraw) on testnet
+- [ ] Update environment variables in all services:
+  - `frontend/.env.local` → `NEXT_PUBLIC_CONTRACT_ID`
+  - `backend/.env` → `SOROBAN_CONTRACT_ID` or `CONTRACT_ID`
+- [ ] Restart backend indexer to begin tracking the new contract
+- [ ] Monitor Stellar Expert for the first few transactions
+- [ ] Document the incident and root cause for future reference
+
+### Emergency Rollback Script
+
+```bash
+#!/bin/bash
+# emergency-rollback.sh - Quick rollback to previous contract
+
+OLD_CONTRACT_ID="<CURRENT_BAD_CONTRACT_ID>"
+NEW_CONTRACT_ID="<NEWLY_DEPLOYED_CONTRACT_ID>"
+
+echo "Rolling back from $OLD_CONTRACT_ID to $NEW_CONTRACT_ID"
+
+# Update frontend
+sed -i "s/$OLD_CONTRACT_ID/$NEW_CONTRACT_ID/g" frontend/.env.local
+
+# Update backend
+sed -i "s/$OLD_CONTRACT_ID/$NEW_CONTRACT_ID/g" backend/.env
+
+# Restart services (adjust for your deployment)
+# pm2 restart backend
+# vercel --prod  # or your frontend deployment command
+
+echo "Rollback complete. Verify at:"
+echo "https://stellar.expert/explorer/testnet/contract/$NEW_CONTRACT_ID"
+```
+
+Make the script executable: `chmod +x emergency-rollback.sh`
+
+## Resources
+
+- **Stellar Laboratory:** https://laboratory.stellar.org (browser-based testnet account funding and transaction builder)
+- **Stellar Expert:** https://stellar.expert/explorer/testnet (blockchain explorer for verifying transactions and contract state)
+- **Soroban CLI Docs:** https://developers.stellar.org/docs/tools/developer-tools/cli (official CLI documentation)
+- **Horizon API Reference:** https://developers.stellar.org/api/horizon (REST API for querying Stellar network)
+
+## Security Notes
+
 - Keep your deploy key secure; consider using ephemeral or CI-specific keys for automated deploys.
+- Never commit private keys or seed phrases to version control.
+- Use hardware wallets or secure key management systems for production deployments.
+- Verify WASM hashes before deploying to production-like environments.

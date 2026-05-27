@@ -50,6 +50,7 @@ export function ProfileCard({
   const [copied, setCopied] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
   const [resending, setResending] = useState(false);
+  const [resendSent, setResendSent] = useState(false);
   const { showToast } = useToast();
 
   const isValid = isValidStellarAddress(walletAddress);
@@ -70,7 +71,8 @@ export function ProfileCard({
       });
       const data = await res.json();
       if (res.ok) {
-        showToast("Verification email resent!", "success");
+        setResendSent(true);
+        showToast("Verification email sent! Check your inbox.", "success");
       } else {
         showToast(data.error || "Failed to resend email", "error");
       }
@@ -140,20 +142,32 @@ export function ProfileCard({
     <div className="space-y-4">
       {isOwner && !isVerified && (
         <div className="rounded-2xl border border-gold/30 bg-gold/5 p-4 flex items-center justify-between gap-4 animate-in fade-in slide-in-from-top-4 duration-500">
-          <div className="flex items-center gap-3">
-            <span className="text-xl">✉️</span>
-            <div>
-              <p className="text-sm font-semibold text-white">Verify your email address</p>
-              <p className="text-xs text-sky/70">Check your inbox to secure your profile and receive notifications.</p>
+          {resendSent ? (
+            <div className="flex items-center gap-3 w-full">
+              <span className="text-xl">📬</span>
+              <div>
+                <p className="text-sm font-semibold text-white">Check your email</p>
+                <p className="text-xs text-sky/70">We sent a new verification link to your inbox. It expires in 24 hours.</p>
+              </div>
             </div>
-          </div>
-          <button
-            onClick={handleResend}
-            disabled={resending}
-            className="text-xs font-bold text-gold hover:text-white transition-colors disabled:opacity-50"
-          >
-            {resending ? 'Sending...' : 'Resend link'}
-          </button>
+          ) : (
+            <>
+              <div className="flex items-center gap-3">
+                <span className="text-xl">✉️</span>
+                <div>
+                  <p className="text-sm font-semibold text-white">Verify your email address</p>
+                  <p className="text-xs text-sky/70">Check your inbox to secure your profile and receive notifications.</p>
+                </div>
+              </div>
+              <button
+                onClick={handleResend}
+                disabled={resending}
+                className="text-xs font-bold text-gold hover:text-white transition-colors disabled:opacity-50"
+              >
+                {resending ? 'Sending...' : 'Resend link'}
+              </button>
+            </>
+          )}
         </div>
       )}
 

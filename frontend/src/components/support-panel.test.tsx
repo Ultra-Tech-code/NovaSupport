@@ -212,4 +212,77 @@ describe('SupportPanel', () => {
       expect(showToast).toHaveBeenCalledWith('Recipient address copied!', 'success');
     });
   });
+
+  it('handles 409 duplicate transaction gracefully — shows success with existing hash', async () => {
+    const horizonHash = 'aabbccdd11223344aabbccdd11223344';
+    const existingHash = 'deadbeef12345678deadbeef12345678';
+
+    vi.mocked(buildSupportIntent).mockResolvedValue('unsigned-xdr');
+    vi.mocked(signTransaction).mockResolvedValue({
+      signedTxXdr: 'signed-xdr',
+      signerAddress: 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+    });
+    vi.mocked(horizonServer.submitTransaction).mockResolvedValue({
+      hash: horizonHash,
+    } as never);
+
+    vi.spyOn(global, 'fetch').mockResolvedValueOnce({
+      ok: false,
+      status: 409,
+      headers: new Headers(),
+      json: async () => ({ existingTxHash: existingHash }),
+    } as Response);
+
+    render(<SupportPanel {...mockProps} />);
+    await waitFor(() => expect(screen.getByPlaceholderText('0.00')).toBeInTheDocument());
+    fireEvent.change(screen.getByPlaceholderText('0.00'), { target: { value: '5' } });
+    await waitFor(() => expect(screen.getByRole('button', { name: /Send Support/i })).not.toBeDisabled());
+    fireEvent.click(screen.getByRole('button', { name: /Send Support/i }));
+
+    await waitFor(
+      () => expect(screen.getByText(/Support Sent!/i)).toBeInTheDocument(),
+      { timeout: 4000 },
+    );
+
+    expect(showToast).toHaveBeenCalledWith(
+      'This transaction was already recorded',
+      'success',
+    );
+
+    // The modal should display the existing hash, not the Horizon hash
+    expect(screen.getByText(`${existingHash.slice(0, 8)}...${existingHash.slice(-8)}`)).toBeInTheDocument();
+  });
+
+  it('does not show an error panel when backend returns 409', async () => {
+    vi.mocked(buildSupportIntent).mockResolvedValue('unsigned-xdr');
+    vi.mocked(signTransaction).mockResolvedValue({
+      signedTxXdr: 'signed-xdr',
+      signerAddress: 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+    });
+    vi.mocked(horizonServer.submitTransaction).mockResolvedValue({
+      hash: 'somehash1234567890abcdef12345678',
+    } as never);
+
+    vi.spyOn(global, 'fetch').mockResolvedValueOnce({
+      ok: false,
+      status: 409,
+      headers: new Headers(),
+      json: async () => ({ existingTxHash: 'existinghash1234567890abcdef1234' }),
+    } as Response);
+
+    render(<SupportPanel {...mockProps} />);
+    await waitFor(() => expect(screen.getByPlaceholderText('0.00')).toBeInTheDocument());
+    fireEvent.change(screen.getByPlaceholderText('0.00'), { target: { value: '5' } });
+    await waitFor(() => expect(screen.getByRole('button', { name: /Send Support/i })).not.toBeDisabled());
+    fireEvent.click(screen.getByRole('button', { name: /Send Support/i }));
+
+    await waitFor(
+      () => expect(screen.getByText(/Support Sent!/i)).toBeInTheDocument(),
+      { timeout: 4000 },
+    );
+
+    // No error panel should be shown
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.queryByText(/error/i)).not.toBeInTheDocument();
+  });
 });

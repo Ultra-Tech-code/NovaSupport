@@ -147,6 +147,51 @@ function sendError(
   return res.status(status).json({ error: message, ...(code ? { code } : {}) });
 }
 
+function getQueryString(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
+
+function escapeCsvCell(value: unknown): string {
+  if (value === null || value === undefined) {
+    return "";
+  }
+
+  const text = value instanceof Date ? value.toISOString() : String(value);
+  return `"${text.replace(/"/g, '""')}"`;
+}
+
+function toCsv(rows: unknown[][]): string {
+  return `${rows.map((row) => row.map(escapeCsvCell).join(",")).join("\n")}\n`;
+}
+
+function createAnalyticsCsv(transactions: any[]): string {
+  const headers = [
+    "Created At",
+    "Transaction Hash",
+    "Status",
+    "Amount",
+    "Asset Code",
+    "Asset Issuer",
+    "Supporter Address",
+    "Recipient Address",
+    "Message",
+  ];
+
+  const rows = transactions.map((tx) => [
+    tx.createdAt,
+    tx.txHash,
+    tx.status,
+    tx.amount.toString(),
+    tx.assetCode,
+    tx.assetIssuer ?? "",
+    tx.supporterAddress ?? "",
+    tx.recipientAddress,
+    tx.message ?? "",
+  ]);
+
+  return toCsv([headers, ...rows]);
+}
+
 export function createApp(customLogger?: Logger) {
   const app = express();
   const { globalLimiter, writeLimiter, profileCreationLimiter, resendLimiter } = createRateLimiters();
@@ -2231,9 +2276,27 @@ export function createApp(customLogger?: Logger) {
    *           minimum: 0
    *           default: 0
    *         description: Number of recent transactions to skip (Min: 0)
+   *       - in: query
+   *         name: format
+   *         schema:
+   *           type: string
+   *           enum: [json, csv]
+   *         description: Use csv to download transaction-level analytics data
+   *       - in: query
+   *         name: startDate
+   *         schema:
+   *           type: string
+   *           format: date-time
+   *         description: Include transactions created on or after this date
+   *       - in: query
+   *         name: endDate
+   *         schema:
+   *           type: string
+   *           format: date-time
+   *         description: Include transactions created on or before this date
    *     responses:
    *       200:
-   *         description: Analytics data
+   *         description: Analytics data or CSV export
    *       404:
    *         description: Analytics not found
    */
@@ -2242,9 +2305,10 @@ export function createApp(customLogger?: Logger) {
     if (!pagination.success) {
       return sendError(res, 400, "Invalid pagination parameters", "INVALID_PAGINATION");
     }
-    const { limit, offset } = pagination.data;
     const { campaignId } = req.params;
-    const { startDate, endDate, format } = req.query;
+    const format = getQueryString(req.query.format);
+    const startDate = getQueryString(req.query.startDate) ?? getQueryString(req.query.from);
+    const endDate = getQueryString(req.query.endDate) ?? getQueryString(req.query.to);
 
     // Attempt to find a profile by username (campaignId maps to username)
     const profile = await prisma.profile.findUnique({
@@ -2259,25 +2323,38 @@ export function createApp(customLogger?: Logger) {
     try {
       const { getAnalytics } = await import("./analytics.js");
       
-      const start = startDate ? new Date(startDate as string) : undefined;
-      const end = endDate ? new Date(endDate as string) : undefined;
+      const start = startDate ? new Date(startDate) : undefined;
+      const end = endDate ? new Date(endDate) : undefined;
       
       if ((startDate && isNaN(start!.getTime())) || (endDate && isNaN(end!.getTime()))) {
         return sendError(res, 400, "Invalid date format");
       }
 
-      const analytics = await getAnalytics(
-        profile.id, 
-        start, 
-        end, 
-        format as "json" | "csv"
-      );
+      if (start && end && start > end) {
+        return sendError(res, 400, "startDate must be before endDate");
+      }
 
       if (format === "csv") {
-        res.setHeader("Content-Type", "text/csv");
-        res.setHeader("Content-Disposition", `attachment; filename=analytics-${campaignId}.csv`);
-        return res.send(analytics);
+        const transactions = await prisma.supportTransaction.findMany({
+          where: {
+            profileId: profile.id,
+            ...(start || end
+              ? { createdAt: { ...(start ? { gte: start } : {}), ...(end ? { lte: end } : {}) } }
+              : {}),
+          },
+          orderBy: { createdAt: "desc" },
+        });
+        const filenameSafeCampaignId = campaignId.replace(/[^a-zA-Z0-9_-]/g, "-");
+
+        res.setHeader("Content-Type", "text/csv; charset=utf-8");
+        res.setHeader(
+          "Content-Disposition",
+          `attachment; filename="analytics-${filenameSafeCampaignId}-${new Date().toISOString().split("T")[0]}.csv"`,
+        );
+        return res.send(createAnalyticsCsv(transactions));
       }
+
+      const analytics = await getAnalytics(profile.id, start, end, "json");
 
       res.json({
         profile: { username: profile.username, displayName: profile.displayName },

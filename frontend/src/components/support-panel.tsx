@@ -650,6 +650,7 @@ export function SupportPanel({
               <div
                 className="text-[10px] font-medium text-sky/50"
                 aria-live="polite"
+                aria-atomic="true"
               >
                 {isBalanceLoading ? (
                   <span className="animate-pulse">Fetching balance...</span>
@@ -813,6 +814,16 @@ export function SupportPanel({
         type="button"
         onClick={handleSendSupport}
         disabled={!isValidAmount || isProcessing || noPathFound || isOverBalance || !isAccountFunded}
+        aria-label={
+          isSubmitting
+            ? "Submitting to Stellar network"
+            : isSigning
+              ? "Waiting for Freighter signature"
+              : isFindingPath
+                ? "Finding best exchange path"
+                : `Send support to ${recipientDisplayName}`
+        }
+        aria-busy={isProcessing}
         className="mt-6 w-full rounded-full bg-mint px-5 py-3 text-sm font-semibold text-ink transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-mint flex items-center justify-center gap-2"
       >
         {isProcessing && (

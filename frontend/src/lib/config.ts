@@ -1,11 +1,14 @@
+const DEFAULTS: Record<string, string> = {
+  NEXT_PUBLIC_HORIZON_URL: "https://horizon-testnet.stellar.org",
+  NEXT_PUBLIC_API_BASE_URL: "http://localhost:3001",
+};
+
 function requireEnv(key: string): string {
   const value = process.env[key];
   if (!value) {
-    // During build time, provide defaults to allow the build to complete
-    if (typeof window === 'undefined') {
-      console.warn(`Missing environment variable: ${key}. Using default value for build.`);
-      if (key === "NEXT_PUBLIC_HORIZON_URL") return "https://horizon-testnet.stellar.org";
-      if (key === "NEXT_PUBLIC_API_BASE_URL") return "http://localhost:3001";
+    if (DEFAULTS[key]) {
+      console.warn(`Missing environment variable: ${key}. Using default value.`);
+      return DEFAULTS[key];
     }
     throw new Error(
       `Missing required environment variable: ${key}. Check frontend/.env.example.`

@@ -37,6 +37,7 @@ interface AnalyticsData {
 type ProfileSettings = {
   walletAddress: string;
   email?: string | null;
+  emailVerified?: boolean;
   notifyOnSupport?: boolean;
 };
 
@@ -259,6 +260,9 @@ export default function DashboardPage() {
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [resendingVerification, setResendingVerification] = useState(false);
+  const [verificationBannerMsg, setVerificationBannerMsg] = useState<string | null>(null);
+  const [verificationBannerType, setVerificationBannerType] = useState<"success" | "error">("success");
 
   useEffect(() => {
     async function fetchData() {
@@ -277,6 +281,7 @@ export default function DashboardPage() {
         setSettings({
           walletAddress: toString(profileJson.walletAddress),
           email: toString(profileJson.email, "") || null,
+          emailVerified: toBool(profileJson.emailVerified, false),
           notifyOnSupport: toBool(profileJson.notifyOnSupport, true),
         });
 
@@ -390,7 +395,35 @@ export default function DashboardPage() {
     }
   }
 
-  if (loading) return (
+  async function handleResendVerification() {
+    if (!isOwner) return;
+    setResendingVerification(true);
+    setVerificationBannerMsg(null);
+    try {
+      const token = typeof window !== "undefined" ? localStorage.getItem("authToken") : null;
+      const res = await fetch(`${API_BASE_URL}/profiles/${campaignId}/resend-verification-email`, {
+        method: "POST",
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      });
+      const json = await res.json().catch(() => ({})) as Record<string, unknown>;
+      if (res.ok) {
+        setVerificationBannerMsg("Verification email sent — check your inbox");
+        setVerificationBannerType("success");
+      } else {
+        setVerificationBannerMsg(
+          typeof json.error === "string" ? json.error : "Failed to resend verification email"
+        );
+        setVerificationBannerType("error");
+      }
+    } catch {
+      setVerificationBannerMsg("Connection error — please try again");
+      setVerificationBannerType("error");
+    } finally {
+      setResendingVerification(false);
+    }
+  }  if (loading) return (
     <AppShell>
       <div className="flex h-[60vh] items-center justify-center">
         <div className="h-12 w-12 animate-spin rounded-full border-4 border-mint border-t-transparent" />
@@ -425,6 +458,56 @@ export default function DashboardPage() {
             Real-time performance metrics for <span className="text-white font-mono">{campaignId}</span>
           </p>
         </header>
+
+        {/* Email verification banner — owner only */}
+        {isOwner && settings && (
+          <>
+            {settings.email && settings.emailVerified === false && (
+              <div className="rounded-2xl border border-yellow-500/30 bg-yellow-500/10 p-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-start gap-3">
+                  <span className="text-xl leading-none mt-0.5">⚠️</span>
+                  <div>
+                    <p className="text-sm font-semibold text-white">
+                      Your email <span className="font-mono text-yellow-300">{settings.email}</span> is not verified.
+                    </p>
+                    {verificationBannerMsg && (
+                      <p className={`mt-1 text-xs ${verificationBannerType === "success" ? "text-mint" : "text-red-400"}`}>
+                        {verificationBannerMsg}
+                      </p>
+                    )}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleResendVerification}
+                  disabled={resendingVerification}
+                  className="inline-flex min-h-[36px] items-center justify-center rounded-xl border border-yellow-500/40 bg-yellow-500/10 px-4 py-1.5 text-xs font-bold text-yellow-300 transition hover:bg-yellow-500/20 disabled:cursor-not-allowed disabled:opacity-60 shrink-0"
+                >
+                  {resendingVerification ? (
+                    <span className="flex items-center gap-2">
+                      <span className="h-3 w-3 animate-spin rounded-full border border-yellow-300 border-t-transparent" />
+                      Sending…
+                    </span>
+                  ) : (
+                    "Resend verification email"
+                  )}
+                </button>
+              </div>
+            )}
+
+            {!settings.email && (
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4 flex items-center gap-3">
+                <span className="text-xl leading-none">📧</span>
+                <p className="text-sm text-sky/70">
+                  Add an email to receive support notifications.{" "}
+                  <Link href="/create" className="text-mint hover:underline font-medium">
+                    Edit profile
+                  </Link>
+                </p>
+              </div>
+            )}
+          </>
+        )}
 
         {/* Summary Cards */}
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
